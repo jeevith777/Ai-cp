@@ -1,4 +1,4 @@
-name: Close stale PRs into develop
+name: Close stale PRs into int-blr
 
 on:
   pull_request:
