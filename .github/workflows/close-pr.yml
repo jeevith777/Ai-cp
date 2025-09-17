@@ -1,59 +1,20 @@
-name: Close stale PRs (develop branch only)
+name: Close stale PRs into develop
 
 on:
-  schedule:
-    - cron: "0 0 * * *"   # run daily at midnight UTC
-  workflow_dispatch:       # allow manual trigger
-
-permissions:
-  issues: write
-  pull-requests: write
+  pull_request:
+    branches:
+      - int-blr
 
 jobs:
-  stale-develop-prs:
+  stale:
     runs-on: ubuntu-latest
     steps:
-      - name: Close stale PRs into develop
-        uses: actions/github-script@v7
+      - uses: actions/stale@v9
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const { data: pullRequests } = await github.pulls.list({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: "open",
-              base: "int-blr"   // 👈 filter only PRs into develop
-            });
-
-            for (const pr of pullRequests) {
-              const lastUpdated = new Date(pr.updated_at);
-              const now = new Date();
-              const daysInactive = (now - lastUpdated) / (1000 * 60 * 60 * 24);
-
-              if (daysInactive > 30) {
-                // Mark PR as stale
-                await github.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: pr.number,
-                  body: "⚠️ This PR has been marked stale due to 30+ days of inactivity. It will be closed in 7 days if no further activity occurs."
-                });
-              }
-
-              if (daysInactive > 37) {
-                // Close PR
-                await github.pulls.update({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  pull_number: pr.number,
-                  state: "closed"
-                });
-
-                await github.issues.createComment({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: pr.number,
-                  body: "🚫 Closing this PR due to prolonged inactivity (37+ days)."
-                });
-              }
-            }
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          days-before-stale: 0
+          days-before-close: 1
+          stale-pr-message: "This PR has been marked as stale due to inactivity. It will be closed if no further activity occurs."
+          close-pr-message: "Closing this PR due to prolonged inactivity."
+          stale-issue-message: ""
+          close-issue-message: ""
