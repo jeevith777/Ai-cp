@@ -1,0 +1,89 @@
+name: Stale & Close old version PRs in Mlf-gitops
+
+on:
+  workflow_dispatch:     # manual trigger
+  schedule:
+    - cron: "*/2 * * * *"  # once every 2 mins
+
+jobs:
+  stale-close-old-prs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate GitHub CLI
+        run: echo "${{ secrets.PAT_TOKEN }}" | gh auth login --with-token
+
+      - name: Get PR list from Mlf-gitops
+        id: prs
+        run: |
+          gh pr list \
+            --repo jeevith777/mlf-gitops\
+            --state open \
+            --base develop \
+            --json number,title,labels,updatedAt > prs.json
+          cat prs.json
+
+      - name: Mark stale or close PRs
+        run: |
+          node <<'EOF'
+          const fs = require("fs");
+          const { execSync } = require("child_process");
+
+          const prs = JSON.parse(fs.readFileSync("prs.json", "utf8"));
+          const versionRegex = /(\d+\.\d+\.\d+)/;
+
+          function normalizeParts(ver) {
+            const parts = ver.split(".").map(Number);
+            while (parts.length < 3) parts.push(0);
+            return parts;
+          }
+          function compareVersions(a, b) {
+            const pa = normalizeParts(a);
+            const pb = normalizeParts(b);
+            for (let i = 0; i < 3; i++) {
+              if (pa[i] > pb[i]) return 1;
+              if (pa[i] < pb[i]) return -1;
+            }
+            return 0;
+          }
+
+          const validPRs = prs
+            .map(pr => {
+              const m = pr.title.match(versionRegex);
+              return m ? { ...pr, version: m[1] } : null;
+            })
+            .filter(Boolean);
+
+          if (validPRs.length === 0) {
+            console.log("No PRs with version found.");
+            process.exit(0);
+          }
+
+          validPRs.sort((a, b) => compareVersions(b.version, a.version));
+          const latest = validPRs[0];
+          console.log(`Latest PR is #${latest.number} (${latest.version})`);
+
+          const now = new Date();
+
+          for (const pr of validPRs.slice(1)) {
+            const labels = pr.labels.map(l => l.name);
+            const updatedAt = new Date(pr.updatedAt);
+
+            if (!labels.includes("stale-version")) {
+              console.log(`Marking PR #${pr.number} as stale`);
+              execSync(`gh pr edit ${pr.number} --repo jeevith777/mlf-gitops --add-label stale-version`);
+              execSync(
+                `gh pr comment ${pr.number} --repo jeevith777/mlf-gitops --body "⚠️ This PR is stale because a newer version PR (${latest.version}) exists. It will be closed if no activity occurs in 2 minutes."`
+              );
+            } else {
+              // Check if it's older than 2 minutes since last update
+              const minutes = (now - updatedAt) / 60000;
+              if (minutes >= 1) {
+                console.log(`Closing PR #${pr.number} due to staleness`);
+                execSync(`gh pr close ${pr.number} --repo jeevith777/mlf-gitops --comment "🚫 Closed because a newer version PR (${latest.version}) exists and this PR was inactive for 1 minutes."`);
+              } else {
+                console.log(`PR #${pr.number} already stale, waiting...`);
+              }
+            }
+          }
+          EOF
+
