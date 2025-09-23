@@ -3,14 +3,14 @@ name: Stale & Close old version PRs in Mlf-gitops
 on:
   workflow_dispatch:     # manual trigger
   schedule:
-    - cron: "*/2 * * * *"  # once every 2 mins
+    - cron: "0 0 * * *"  # once every 2 mins
 
 jobs:
   stale-close-old-prs:
     runs-on: ubuntu-latest
     steps:
       - name: Authenticate GitHub CLI
-        run: echo "${{ secrets.PAT_TOKEN }}" | gh auth login --with-token
+        run: echo "${{ secrets.FGT_TOKEN }}" | gh auth login --with-token
 
       - name: Get PR list from Mlf-gitops
         id: prs
