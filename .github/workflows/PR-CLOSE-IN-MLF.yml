@@ -2,8 +2,8 @@ name: Stale & Close old version PRs in Mlf-gitops
 
 on:
   workflow_dispatch:     # manual trigger
-  #schedule:
-   # - cron: "*/2 * * * *"  # once every 2 mins
+  schedule:
+    - cron: "*/2 * * * *"  # once every 2 mins
 
 jobs:
   stale-close-old-prs:
