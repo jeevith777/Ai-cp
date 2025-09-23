@@ -101,7 +101,7 @@ jobs:
                     owner: OWNER,
                     repo: REPO,
                     issue_number: pr.number,
-                    body: `⚠️ This PR is now marked as stale because a newer version PR (${currentVersion}) exists. It will be closed after 1 minute of inactivity.`
+                    body: `⚠️ This PR is now marked as stale because a newer version PR (${currentVersion}) exists. It will be closed after 2 minute of inactivity.`
                   });
                 }
 
@@ -110,8 +110,8 @@ jobs:
                 const now = new Date();
                 const diffMin = (now - updatedAt) / 1000 / 60;
 
-                if (diffMin >= 1) {
-                  core.info(`Closing PR #${pr.number} (${version}) after 1 min stale.`);
+                if (diffMin >= 2) {
+                  core.info(`Closing PR #${pr.number} (${version}) after 2 min stale.`);
                   await github.rest.pulls.update({
                     owner: OWNER,
                     repo: REPO,
