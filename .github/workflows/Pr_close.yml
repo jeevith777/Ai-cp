@@ -11,10 +11,21 @@ jobs:
   close-older-prs:
     runs-on: ubuntu-latest
     steps:
+    
+      - name: Check FGT_1 secret
+        run: |
+          if [ -z "${{ secrets.FGT_1 }}" ]; then
+            echo "❌ FGT_1 secret is missing!"
+            exit 1
+          else
+            echo "✅ FGT_1 secret is present."
+          fi
+
+          
       - name: Close older version PRs in target repo
         uses: actions/github-script@v7
         with:
-          github-token: ${{ secrets.FGT_TOKEN }}  # Must have access to target repo
+          github-token: ${{ secrets.FGT_1 }}  # Must have access to target repo
           script: |
             const OWNER = "jeevith777";      // Target repo owner
             const REPO = "mlf-gitops";         // Target repo name
