@@ -1,0 +1,130 @@
+name: Close old version PRs in mlf-gitops
+
+on:
+  workflow_dispatch:   # Manual trigger
+  schedule:            # Run every day at midnight
+    - cron: '0 0 * * *'
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches:
+      - develop   # Only for PRs into develop
+
+jobs:
+  stale-and-close-prs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close older version PRs in target repo
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.FGT_1 }}
+          script: |
+            const OWNER = "jeevith777";      // Target repo owner
+            const REPO = "mlf-gitops";     // Target repo name
+
+            // Helper functions for version comparison
+            function normalizeParts(ver) {
+              const parts = ver.split(".").map(Number);
+              while (parts.length < 3) parts.push(0);
+              return parts;
+            }
+
+            function compareVersions(a, b) {
+              const pa = normalizeParts(a);
+              const pb = normalizeParts(b);
+              for (let i = 0; i < 3; i++) {
+                if (pa[i] > pb[i]) return 1;
+                if (pa[i] < pb[i]) return -1;
+              }
+              return 0;
+            }
+
+            // Regex to capture version numbers
+            const versionRegex = /(\d+\.\d+\.\d+)/;
+
+            const currentPr = context.payload.pull_request;
+            let currentVersion = null;
+            if (currentPr) {
+              const match = currentPr.title.match(versionRegex);
+              if (match) currentVersion = match[1];
+            }
+
+            // Get all open PRs in target repo into develop
+            const { data: pullRequests } = await github.rest.pulls.list({
+              owner: OWNER,
+              repo: REPO,
+              state: "open",
+              base: "develop"
+            });
+
+            // If manual or scheduled run → find the latest PR automatically
+            if (!currentVersion) {
+              let latestPr = null;
+              for (const pr of pullRequests) {
+                const m = pr.title.match(versionRegex);
+                if (!m) continue;
+                const version = m[1];
+                if (!latestPr || compareVersions(version, latestPr.version) > 0) {
+                  latestPr = { number: pr.number, title: pr.title, version };
+                }
+              }
+              if (!latestPr) {
+                core.info("No PRs with versions found. Nothing to close.");
+                return;
+              }
+              currentVersion = latestPr.version;
+              core.info(`Manual/scheduled run: treating PR #${latestPr.number} (${currentVersion}) as the latest.`);
+            }
+
+            // Loop through all PRs
+            for (const pr of pullRequests) {
+              if (currentPr && pr.number === currentPr.number) continue;
+
+              const m = pr.title.match(versionRegex);
+              if (!m) continue;
+              const version = m[1];
+
+              // If PR version is older
+              if (compareVersions(currentVersion, version) > 0) {
+
+                // Step 1: Add 'stale' label & comment if not already stale
+                const labels = pr.labels.map(l => l.name);
+                if (!labels.includes("stale")) {
+                  core.info(`Marking PR #${pr.number} (${version}) as stale.`);
+                  await github.rest.issues.addLabels({
+                    owner: OWNER,
+                    repo: REPO,
+                    issue_number: pr.number,
+                    labels: ["stale"]
+                  });
+
+                  await github.rest.issues.createComment({
+                    owner: OWNER,
+                    repo: REPO,
+                    issue_number: pr.number,
+                    body: `⚠️ This PR is now marked as stale because a newer version PR (${currentVersion}) exists. It will be closed after 1 minute of inactivity.`
+                  });
+                }
+
+                // Step 2: Check if stale for 1 min → close
+                const updatedAt = new Date(pr.updated_at);
+                const now = new Date();
+                const diffMin = (now - updatedAt) / 1000 / 60;
+
+                if (diffMin >= 1) {
+                  core.info(`Closing PR #${pr.number} (${version}) after 1 min stale.`);
+                  await github.rest.pulls.update({
+                    owner: OWNER,
+                    repo: REPO,
+                    pull_number: pr.number,
+                    state: "closed"
+                  });
+
+                  await github.rest.issues.createComment({
+                    owner: OWNER,
+                    repo: REPO,
+                    issue_number: pr.number,
+                    body: `🚫 This PR has been closed due to prolonged inactivity after being marked stale.`
+                  });
+                }
+              }
+            }
