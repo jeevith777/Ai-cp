@@ -1,0 +1,104 @@
+name: Updated. Close PRs in mlf-gitops 
+
+on:
+  workflow_dispatch:   # Manual trigger
+  workflow_run:
+    workflows: ["Close stale PRs into int-blr"]
+    types:
+      - completed
+
+  pull_request:
+    types: [opened, reopened, synchronize]
+    branches:
+      - develop   # Only for PRs into develop
+
+jobs:
+  stale-and-close-prs:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close older version PRs in target repo
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.FGT_1 }}
+          script: |
+            const OWNER = "jeevith777";
+            const REPO = "mlf-gitops";
+
+            // Helper functions to compare versions
+            function normalizeParts(ver) {
+              const parts = ver.split(".").map(Number);
+              while (parts.length < 3) parts.push(0); // ensure [major, minor, patch]
+              return parts;
+            }
+
+            function compareVersions(a, b) {
+              const pa = normalizeParts(a);
+              const pb = normalizeParts(b);
+              for (let i = 0; i < 3; i++) {
+                if (pa[i] > pb[i]) return 1;
+                if (pa[i] < pb[i]) return -1;
+              }
+              return 0;
+            }
+
+            // Regex to extract version from PR title
+            const versionRegex = /(\d+\.\d+\.\d+)/;
+
+            // Get all open PRs targeting develop
+            const { data: pullRequests } = await github.rest.pulls.list({
+              owner: OWNER,
+              repo: REPO,
+              state: "open",
+              base: "develop"
+            });
+
+            if (!pullRequests || pullRequests.length === 0) {
+              core.info("No open PRs targeting develop.");
+              return;
+            }
+
+            // Extract versioned PRs
+            const prVersions = pullRequests
+              .map(pr => {
+                const match = pr.title.match(versionRegex);
+                return match ? { number: pr.number, title: pr.title, version: match[1] } : null;
+              })
+              .filter(Boolean);
+
+            if (prVersions.length === 0) {
+              core.info("No versioned PRs found.");
+              return;
+            }
+
+            // Find the latest version
+            let latestVersion = prVersions[0].version;
+            for (const pr of prVersions) {
+              if (compareVersions(pr.version, latestVersion) > 0) {
+                latestVersion = pr.version;
+              }
+            }
+            core.info(`Latest version detected: ${latestVersion}`);
+
+            // Close older versions
+            for (const pr of prVersions) {
+              if (compareVersions(latestVersion, pr.version) > 0) {
+                core.info(`Closing older PR #${pr.number} (${pr.version})`);
+                await github.rest.pulls.update({
+                  owner: OWNER,
+                  repo: REPO,
+                  pull_number: pr.number,
+                  state: "closed"
+                });
+
+                await github.rest.issues.createComment({
+                  owner: OWNER,
+                  repo: REPO,
+                  issue_number: pr.number,
+                  body: `⚠️ This PR has been closed because a newer version PR (${latestVersion}) exists.`
+                });
+              }
+            }
+
+            core.info("All older version PRs processed.");
+              }
+            }
