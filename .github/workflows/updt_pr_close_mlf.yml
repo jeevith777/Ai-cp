@@ -100,5 +100,4 @@ jobs:
             }
 
             core.info("All older version PRs processed.");
-              }
-            }
+
