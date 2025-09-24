@@ -1,6 +1,7 @@
 name: Close stale PRs into int-blr
 
 on:
+  workflow_dispatch:
   pull_request:
     branches:
       - int-blr
